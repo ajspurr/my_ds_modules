@@ -192,6 +192,7 @@ def render_mpl_table(data, col_width=3.0, row_height=0.625, font_size=14, header
     mpl_table.auto_set_font_size(False)
     mpl_table.set_fontsize(font_size)
 
+    # Set cell edge colors, background color, font size, font color, etc.
     for k, cell in  mpl_table._cells.items():
         cell.set_edgecolor(edge_color)
         if k[0] == 0 or k[1] < header_columns:
