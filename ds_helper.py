@@ -9,7 +9,6 @@ from sklearn.metrics import mean_squared_error
 from sklearn.metrics import mean_absolute_error
 from sklearn.metrics import median_absolute_error
 
-import statsmodels.api as sm
 from statsmodels.tools.tools import add_constant
 from statsmodels.graphics.gofplots import qqplot
 from statsmodels.stats.diagnostic import het_white
@@ -17,7 +16,6 @@ from statsmodels.stats.diagnostic import lilliefors
 from statsmodels.tools.eval_measures import meanabs
 from statsmodels.stats.diagnostic import het_breuschpagan
 from statsmodels.stats.outliers_influence import variance_inflation_factor
-from statsmodels.stats.outliers_influence import OLSInfluence as influence
 
 formatted_cols = {}
 
