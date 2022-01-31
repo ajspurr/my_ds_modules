@@ -716,9 +716,31 @@ def calc_sse_dist(my_data, fit_results_df, bins=200):
     return sse_results
 
 
-# Add the rank for each GOF statistic and save the top 10 of each and return as a df
-# gof_stat_col_names and gof_names have to represent the same gof test
 def rank_gof_stats(complete_results_df, gof_stat_col_names, gof_names):
+    """
+    Takes the DataFrame complete_results_df generated from fit_to_dist_gof() and adds 
+    the rank for each GOF statistic. Also saves the top 10 of each GOF test and returns 
+    as DataFrame top_10_df. 
+    # gof_stat_col_names and gof_names have to represent the same gof test
+
+    Parameters
+    ----------
+    complete_results_df : Pandas DataFrame
+        Generated from fit_to_dist_gof().
+    gof_stat_col_names : 1-D list
+        The names of the columns that contain the values of the test statistic for each GOF test.
+        Must be same length and correspond with names in gof_names.
+    gof_names : 1-D list
+        The abbreviated names of the GOF tests to be used in top_10_df. Must be same length and correspond
+        with names in gof_stat_col_names.
+
+    Returns
+    -------
+    top_10_df : Pandas DataFrame
+        Columns are GOF test names, each column represents the top 10 ranked distributions, in order,
+        of said GOF test.
+
+    """
     # Number of dists in complete_results_df, used to calculate range of ranks
     num_dists = len(complete_results_df.index)
     
@@ -742,6 +764,22 @@ def rank_gof_stats(complete_results_df, gof_stat_col_names, gof_names):
     return top_10_df
 
 def top_10_counts(top_10_df):
+    """
+    Creates a DataFrame of number of times each dist appears in top_10_df (generated in rank_gof_stats()), 
+    and for which GOF metrics specifically.
+
+    Parameters
+    ----------
+    top_10_df : Pandas DataFrame
+        Generated in rank_gof_stats(). Columns are GOF test names, each column represents the 
+        top 10 ranked distributions, in order, of said GOF test.
+
+    Returns
+    -------
+    top_10_counts_df : Pandas DataFrame
+        Number of times each dist appears in top_10_df, and for which GOF metrics specifically.
+
+    """
     # Provides a list of every distribution that appears at least once in top_10_df
     all_top_10_dists = top_10_df.apply(pd.value_counts).index
     
@@ -842,10 +880,23 @@ def top_10_counts(top_10_df):
 #     plt.show()
 
 
-# Create a string where each line includes the distribution fit parameter name and its value
-# dist_obj: Scipy distribution object
-# fit_params: the tuple of parameters returned after with scipy function fit()
 def create_fit_param_str(dist_obj, fit_params):
+    """
+    Creates a string where each line includes the distribution fit parameter name and its value
+
+    Parameters
+    ----------
+    dist_obj : scipy.stats.rv_continuous
+        Scipy distribution object.
+    fit_params : Tuple
+        Parameters returned after with scipy function fit().
+
+    Returns
+    -------
+    fit_params_str : String
+        Each line includes the distribution fit parameter name and its value.
+
+    """
     fit_param_names = (dist_obj.shapes + ', loc, scale').split(', ') if dist_obj.shapes else ['loc', 'scale']
     fit_param_list = ['{}: {:0.2f}'.format(k,v) for k,v in zip(fit_param_names, fit_params)]
     fit_params_str = '\n'.join(str(line) for line in fit_param_list)
@@ -922,11 +973,48 @@ def hist_vs_dist_plot(my_data, my_data_str='Residuals', dist_obj=stats.norm, fit
     if save_img:
         save_image(img_filename, save_dir)
 
-# Plot both qq and hist vs. dist plots in same figure
+
 def plot_qq_hist_dist_combined(my_data, my_data_str='Residuals', dist_obj=stats.norm, dist_str='Normal Dist',
                                fit_params=None, bins=50, textbox_str=None, fig_title=None, title_fontsize = 24, 
                                figsize=(10, 5), save_img=False, img_filename=None, save_dir=None):
-    
+    """
+    Plot both qq and hist vs. dist plots in same figure. Utilizes hist_vs_dist_plot() and my_qq(). 
+
+    Parameters
+    ----------
+    my_data : 1-D array-like
+        Data which is being plotted against a specificed distribution.
+    my_data_str : String, optional
+        String labeling my_data, to be used in plots. The default is 'Residuals'.
+    dist_obj : scipy.stats.rv_continuous, optional
+        Scipy distribution object being compared to my_data. The default is stats.norm.
+    dist_str : String, optional
+        Represents name of dist_obj. Does not need to be the SciPy representation of the distribution as this String is just 
+        used in the plots. The default is 'Normal Dist'.
+    fit_params : tuple, optional
+        Distribution fit patameters returned with SciPy fit() function. The default is None.
+    bins : int, optional
+        Number of bins for the hitsogram. The default is 50.
+    textbox_str : String, optional
+        Can be any string to be included in a textbox next to the plot. The default is None.
+    fig_title : String, optional
+        Title of figure. The default is None.
+    title_fontsize : int, optional
+        Font size of figure title. The default is 24.
+    figsize : type, optional
+        Figure size. The default is (10, 5).
+    save_img : boolean, optional
+        Whether or not to save image. The default is False.
+    img_filename : String, optional
+        Filed name if saving image. The default is None.
+    save_dir : String, optional
+        Directory to save image in. The default is None.
+
+    Returns
+    -------
+    None.
+
+    """
     # Create figure, gridspec, list of axes/subplots mapped to gridspec location
     fig, gs, ax_array_flat = initialize_fig_gs_ax(num_rows=1, num_cols=2, figsize=figsize)
 
@@ -956,7 +1044,24 @@ def plot_qq_hist_dist_combined(my_data, my_data_str='Residuals', dist_obj=stats.
 
 def normality_tests(my_data):
     """
-    Assumes alpha of 0.05
+    Performs 6 tests for normality on my_data: Shapiro-Wilk, D'Agostino's K-squared, 
+    Chi-Square, Jarque–Bera, Kolmogorov-Smirnov, Lilliefors, and Anderson-Darling.  
+    Assumes an alpha of 0.05.
+
+    Parameters
+    ----------
+    my_data : 1-D array-like
+        Data which is being tested for normality.
+
+    Returns
+    -------
+    norm_test_series : Pandas Series
+        Contains test statistic and p-value (and crit values for ad test) for each test.
+    test_interpret : Pandas Series
+        Series that contains interpretation of normality test results: whether my_data 
+        'passed' each of the normality tests or not.
+    normal_interpret_txt : String
+        String representing the same information in test_interpret Series.
 
     """
     alpha=0.05
@@ -1011,8 +1116,22 @@ def normality_tests(my_data):
     
     return norm_test_series, test_interpret, normal_interpret_txt(test_interpret)
 
-# Convert normality test interpretation (from normality_tests())  to text for plots
+
 def normal_interpret_txt(interp_results):
+    """
+    Converts normality test interpretation (from normality_tests())  to text for plots
+
+    Parameters
+    ----------
+    interp_results : Pandas Series
+        Normality test interpretation from normality_tests().
+
+    Returns
+    -------
+    output_txt_str : String
+        String representing the same information in interp_results Series.
+
+    """
     #test_names = ["Shapiro-Wilk", "D'Agostino's K-squared", "Chi-Square", "Jarque–Bera", "Kolmogorov-Smirnov", "Lilliefors", "Anderson-Darling"]
     test_abbv = ['SW', 'DK', 'CS', 'JB', 'KS', 'LT', 'AD']
     output_txt_str = 'Normality Test Results:\n\n'
