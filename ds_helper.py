@@ -9,6 +9,7 @@ from sklearn.metrics import mean_squared_error
 from sklearn.metrics import mean_absolute_error
 from sklearn.metrics import median_absolute_error
 
+import statsmodels.api as sm
 from statsmodels.tools.tools import add_constant
 from statsmodels.graphics.gofplots import qqplot
 from statsmodels.stats.diagnostic import het_white
@@ -32,7 +33,7 @@ def dataframe_percentages(data, target, categorical_var):
     
     Parameters
     ----------
-    data: pandas DataFrame
+    data: pandas.DataFrame
     target: string 
         Column name of target variable (in 'data')
         Must be discrete data
@@ -41,7 +42,7 @@ def dataframe_percentages(data, target, categorical_var):
     
     Returns
     -------
-    df_grouped: pandas DataFrame
+    df_grouped: pandas.DataFrame
         First column name = function parameter 'target'
         Second column name = function parameter 'categorical_var'
             First two columns will include every unique combination of target and categorical_var
@@ -87,7 +88,7 @@ def df_shape_to_img(df, title_fontsize=12, number_fontsize=20, text_fontsize=10,
 
     Parameters
     ----------
-    df : pandas DataFrame
+    df : pandas.DataFrame
         DataFrame shape to be display
     title_fontsize : int, optional
         Font size of title. The default is 12.
@@ -138,7 +139,7 @@ def render_mpl_table(data, col_width=3.0, row_height=0.625, font_size=14, header
 
     Parameters
     ----------
-    data : pandas DataFrame
+    data : pandas.DataFrame
         DataFrame to be displayed as image
     col_width : float64, optional
         DESCRIPTION. The default is 3.0.
@@ -246,12 +247,11 @@ def format_col(col_name):
     return formatted_cols[col_name]
 
 # Create 2d array of given size, used for figures with gridspec (here, used with initialize_fig_gs_ax())
-def create_2d_array(num_rows, num_cols):
-    matrix = []
-    for r in range(0, num_rows):
-        matrix.append([0 for c in range(0, num_cols)])
-    return matrix
-
+# def create_2d_array(num_rows, num_cols):
+#     matrix = []
+#     for r in range(0, num_rows):
+#         matrix.append([0 for c in range(0, num_cols)])
+#     return matrix
 
 def initialize_fig_gs_ax(num_rows, num_cols, figsize=(16, 8)):
     """
@@ -278,16 +278,20 @@ def initialize_fig_gs_ax(num_rows, num_cols, figsize=(16, 8)):
     """
     
     fig = plt.figure(constrained_layout=True, figsize=figsize)
-    ax_array = create_2d_array(num_rows, num_cols)
+    #ax_array = create_2d_array(num_rows, num_cols)
+    ax_array_flat = []
     gs = fig.add_gridspec(num_rows, num_cols)
 
     # Map each subplot/axis to gridspec location
-    for r in range(len(ax_array)):
-        for c in range(len(ax_array[r])):
-            ax_array[r][c] = fig.add_subplot(gs[r,c])
+    #for r in range(len(ax_array)):
+    for r in range(num_rows):    
+        #for c in range(len(ax_array[r])):
+        for c in range(num_cols):
+            #ax_array[r][c] = fig.add_subplot(gs[r,c])
+            ax_array_flat.append(fig.add_subplot(gs[r,c]))
 
     # Flatten 2d array of axis objects to iterate through easier
-    ax_array_flat = np.array(ax_array).flatten()
+    #ax_array_flat = np.array(ax_array).flatten()
     
     return fig, gs, ax_array_flat
 
@@ -317,6 +321,248 @@ def disp_y_val_in_barplot():
 # Regression model evaluation functions
 # ====================================================================================================================
 
+
+
+def sm_lr_model_results_subgrouped(lr_model, X_data, y, y_pred, plot_title, combine_plots=True, 
+                                   grouping=None, cmap=None, save_img=False, filename=None, save_dir=None):      
+    """
+    Create Scale-Location Plot (studentized residuals vs. predicted values) and true values vs. predicted values plot
+    
+    Credits:
+    https://datavizpyr.com/add-legend-to-scatterplot-colored-by-a-variable-with-matplotlib-in-python/
+    https://www.statology.org/matplotlib-scatterplot-legend/
+
+    Parameters
+    ----------
+    lr_model : statsmodels.regression.linear_model.OLS
+        statsmodels OLS model used.
+    X_data : pandas.DataFrame
+        Features and their values.
+    y : array_like (1-D)
+        Series of y-values (target) from original dataset.
+    y_pred : array_like (1-D)
+        Series of predicted y-values.
+    plot_title : string
+        String to be added to figure title (if combining plots).
+    combine_plots : boolean, optional
+        Whether or not to combine the two plots created. The default is True.
+    grouping : array_like (1-D), optional
+        If scatterplots are to be colored by a certain subcategory, this is the series with labels for each sample. The default is None.
+    cmap : matplotlib.colors.Colormap, optional
+        Colormap to be used if grouping plots. The default is None.
+    save_img : boolean, optional
+        Whether or not to save the image (can only save if combining). The default is False.
+    filename : string, optional
+        If saving image, String to be used as the file name. The default is None.
+    save_dir : string, optional
+        If saving image, the absolute path of the directory in which to save the file. The default is None.
+
+    Returns
+    -------
+    het_metrics : Dictionary of dictionaries
+        Dictionary of dictionaries containing the heteroscedasticity metrics for both Breusch-Pagan test and White test.
+
+    """
+    
+    # Organize relevant data
+    standardized_residuals = pd.DataFrame(lr_model.get_influence().resid_studentized_internal, columns=['stand_resid'])
+    y_pred_series = pd.Series(y_pred, name='y_pred')
+    y_series = pd.Series(y, name='y')
+    
+    # Changed join to 'inner' as the 'grouping' parameter may be larger than other variables like 'y_series'. 'grouping'
+    # may have been created before removing certain samples, like outliers. Join='inner' maps the grouping index to the 
+    # y_series index
+    relevant_data = pd.concat([y_series, y_pred_series, standardized_residuals, grouping], axis=1, join='inner')
+        
+    # Quantify Heteroscedasticity using Breusch-Pagan test and White test
+    bp_test = het_breuschpagan(lr_model.resid, lr_model.model.exog)
+    white_test = het_white(lr_model.resid, lr_model.model.exog)
+    labels = ['LM Statistic', 'LM-Test p-value', 'F-Statistic', 'F-Test p-value']
+    bp_test_results = dict(zip(labels, bp_test))
+    white_test_results = dict(zip(labels, white_test))
+    bp_lm_p_value = '{:0.2e}'.format(bp_test_results['LM-Test p-value'])
+    white_lm_p_value = '{:0.2e}'.format(white_test_results['LM-Test p-value'])
+    
+    # Convert the grouping variable 'grouping' to a pandas.Categorical object so I can encode each 
+    # category to a number (grouping_as_cat.codes) and save the associated category names (grouping_as_cat.categories.tolist())
+    if grouping is not None:
+        grouping = relevant_data['grouping']
+        grouping_as_cat = grouping.astype('category').cat
+        grouping_as_codes = grouping_as_cat.codes
+        grouping_categories = grouping_as_cat.categories.tolist()
+    else:
+        grouping_as_codes = None
+        grouping_categories = None
+        
+    # =============================
+    # Initialize plot formatting variables
+    # =============================
+    if combine_plots:
+        # Create figure, gridspec, list of axes/subplots mapped to gridspec location
+        fig, gs, ax_array_flat = initialize_fig_gs_ax(num_rows=1, num_cols=2, figsize=(12, 5))
+    
+    # Format text box with relevant metric of each plot
+    box_style = {'facecolor':'white', 'boxstyle':'round', 'alpha':0.8}
+
+
+    # =============================
+    # Plot studentized residuals vs. predicted values
+    # =============================
+    if not combine_plots:
+        scatter1 = plt.scatter(relevant_data['y_pred'], relevant_data['stand_resid'], c=grouping_as_codes, cmap=cmap, alpha=0.5)
+        ax1 = plt.gca()
+    else:
+        ax1 = ax_array_flat[0]
+        ax1.scatter(relevant_data['y_pred'], relevant_data['stand_resid'], c=grouping_as_codes, cmap=cmap, alpha=0.5)
+    
+    ax1.axhline(y=0, color='darkblue', linestyle='--')
+    ax1.set_ylabel('Studentized Residuals')
+    ax1.set_xlabel('Predicted Values')
+    ax1.set_title('Scale-Location')
+    textbox_text = f'BP: {bp_lm_p_value} \n White: {white_lm_p_value}' 
+    ax1.text(0.95, 0.92, textbox_text, bbox=box_style, transform=ax1.transAxes, verticalalignment='top', horizontalalignment='right')  
+    if not combine_plots: 
+        if grouping is not None:
+            ax1.legend(bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0, title='Subgroup', 
+                       handles=scatter1.legend_elements()[0], labels=grouping_categories)  
+        plt.show()
+    
+    # =============================
+    # True Values vs. Predicted Values 
+    # =============================
+    if not combine_plots:
+        scatter2 = plt.scatter(relevant_data['y'], relevant_data['y_pred'], c=grouping_as_codes, cmap=cmap, alpha=0.5)
+        ax2 = plt.gca()
+    else:
+        ax2 = ax_array_flat[1]
+        scatter2 = ax2.scatter(relevant_data['y'], relevant_data['y_pred'], c=grouping_as_codes, cmap=cmap, alpha=0.5)
+      
+    largest_num = max(max(relevant_data['y']), max(relevant_data['y_pred']))
+    smallest_num = min(min(relevant_data['y']), min(relevant_data['y_pred']))
+    
+    plot_limits = [smallest_num - (0.02*largest_num), largest_num + (0.02*largest_num)]
+    ax2.set_xlim(plot_limits)
+    ax2.set_ylim(plot_limits)
+    ax2.plot([0, 1], [0, 1], color='darkblue', linestyle='--', transform=ax2.transAxes)
+    #ax2.plot([smallest_num, largest_num], [smallest_num, largest_num], color='darkblue', linestyle='--')
+    
+    ax2.set_title('True Values vs. Predicted Values')
+    ax2.set_ylabel('Predicted Values')
+    ax2.set_xlabel('True Values')
+    if grouping is not None:
+        ax2.legend(bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0, title='Subgroup', 
+                   handles=scatter2.legend_elements()[0], labels=grouping_categories)  
+    r2_str = r'$R^2$: %0.3f' %lr_model.rsquared
+    r2_adj_str = r'Adj $R^2$: %0.3f' %lr_model.rsquared_adj
+    textbox_text = f"{r2_str}\n{r2_adj_str}"
+    ax2.text(0.95, 0.92, textbox_text, bbox=box_style, transform=ax2.transAxes, verticalalignment='top', horizontalalignment='right') 
+    if not combine_plots: plt.show()
+    
+    # =============================
+    # Format and save figure
+    # =============================
+    if combine_plots:
+        fig.suptitle('LR Model Performance (' + plot_title + ')', fontsize=24)
+        fig.tight_layout(h_pad=2) # Increase spacing between plots to minimize text overlap
+        if save_img:
+            save_image(filename, save_dir)
+        plt.show()
+
+    het_metrics = dict(zip(['BP', 'White'], [bp_test_results, white_test_results]))
+    
+    return het_metrics
+
+  
+def fit_lr_model_results(fxn_X, fxn_y, plot_title, combine_plots=True, subgroup=False, 
+                         grouping=None, cmap=None, save_img=False, filename=None, save_dir=None):
+    """
+    Combine statsmodels linear regression model creation, fitting, plotting, and returning results  
+
+    Parameters
+    ----------
+    fxn_X : pandas.DataFrame
+        Features and their values.
+    fxn_y : array_like (1-D)
+        Series of y-values (target) from original dataset.
+    plot_title : string
+        String to be added to figure title (if combining plots).
+    combine_plots : boolean, optional
+        Whether or not to combine the two plots created into one figure. The default is True.
+    subgroup : boolean, optional
+        Whether or not to color scatterplots by subgroups. The default is False.
+    grouping : array_like (1-D), optional
+        If scatterplots are to be colored by a certain subcategory, this is the series with labels for each sample. The default is None.
+    cmap : matplotlib.colors.Colormap, optional
+        Colormap to be used if grouping plots. The default is None.
+    save_img : boolean, optional
+        Whether or not to save the image (can only save if combining). The default is False.
+    filename : string, optional
+        If saving image, String to be used as the file name. The default is None.
+    save_dir : string, optional
+        If saving image, the absolute path of the directory in which to save the file. The default is None.
+
+    Returns
+    -------
+    fxn_lin_reg : statsmodels.regression.linear_model.OLS
+        statsmodels OLS model that was fit.
+    fxn_y_pred : array_like (1-D)
+        Predicted target values by model.
+    het_results : Dictionary of dictionaries
+        Dictionary of dictionaries containing the heteroscedasticity metrics for both Breusch-Pagan test and White test.
+
+    """
+    
+    # Fit model
+    fxn_lin_reg = sm.OLS(fxn_y, fxn_X).fit()
+    
+    # Predict target
+    fxn_y_pred = fxn_lin_reg.predict(fxn_X) 
+    
+    if subgroup:
+        if grouping is None:
+            # Create new category that combines both smoking and obesity (obese smoker, obese nonsmoker, etc.)
+            grouping = create_obese_smoker_category(fxn_X)
+           
+        # Plot results subgrouped, get heteroscedasticity metrics
+        het_results = sm_lr_model_results_subgrouped(fxn_lin_reg, fxn_X, fxn_y, fxn_y_pred, plot_title, combine_plots=combine_plots,
+                                                 grouping=grouping, cmap=cmap, save_img=save_img, filename=filename)
+    
+    else:
+        het_results = sm_lr_model_results_subgrouped(fxn_lin_reg, fxn_X, fxn_y, fxn_y_pred, plot_title, combine_plots=combine_plots,
+                                                 cmap=cmap, save_img=save_img, filename=filename)
+        
+    return fxn_lin_reg, fxn_y_pred, het_results
+
+
+def create_obese_smoker_category(X_df):
+    """
+    Takes dataframe of X values (X_df), uses them to create Series with categories:
+    'obese smokers', 'nonobese smokers', 'obese nonsmokers', 'nonobese nonsmokers'
+    Returns a series of said categories with same indeces as 'X_df' parameter
+    Credit: https://datagy.io/pandas-conditional-column/
+
+    Parameters
+    ----------
+    X_df : pandas.DataFrame
+        Features and their values being used to create new categories.
+
+    Returns
+    -------
+    pandas.Series
+        Series of new categories with same indeces 'X_df' parameter.
+
+    """
+    conditions = [
+        (X_df['bmi_>=_30_yes'] == 1) & (X_df['smoker_yes'] == 1),
+        (X_df['bmi_>=_30_yes'] == 0) & (X_df['smoker_yes'] == 1),
+        (X_df['bmi_>=_30_yes'] == 1) & (X_df['smoker_yes'] == 0),
+        (X_df['bmi_>=_30_yes'] == 0) & (X_df['smoker_yes'] == 0)
+    ]
+    
+    category_names = ['obese smokers', 'nonobese smokers', 'obese nonsmokers', 'nonobese nonsmokers']
+    return pd.Series(np.select(conditions, category_names), name='grouping')  
+
+
 def plot_coefficient_df(top_df, middle_df, bottom_df, save_img=False, filename=None, save_dir=None):
     """
     Creates figure with three line graphs representing the change in variable coefficients from different linear regression models.
@@ -327,7 +573,7 @@ def plot_coefficient_df(top_df, middle_df, bottom_df, save_img=False, filename=N
 
     Parameters
     ----------
-    top_df : Pandas DataFrame
+    top_df : pandas.DataFrame
         Variable coefficients to be plotted on top graph.
     middle_df : DataFrame
         Variable coefficients to be plotted on middle graph.
@@ -390,13 +636,13 @@ def plot_model_metrics_df(top_l_df, top_r_df, bottom_l_df, bottom_r_df, save_img
 
     Parameters
     ----------
-    top_l_df : Pandas DataFrame
+    top_l_df : pandas.DataFrame
         Model performs metrics to be graphed on top left plot.
-    top_r_df : Pandas DataFrame
+    top_r_df : pandas.DataFrame
         Model performs metrics to be graphed on top right plot.
-    bottom_l_df : Pandas DataFrame
+    bottom_l_df : pandas.DataFrame
         Model performs metrics to be graphed on bottom left plot.
-    bottom_r_df : Pandas DataFrame
+    bottom_r_df : pandas.DataFrame
         Model performs metrics to be graphed on bottom right plot.
     save_img : boolean, optional
         Whether or not to save the image. The default is False.
@@ -464,7 +710,7 @@ def evaluate_model_sk(y_valid, y_pred, X, round_results=3, print_results=False):
         1-D array of target values in validation set.
     y_pred : array_like
         1-D array of predicated target values from samples in validation set.
-    X : Pandas DataFrame
+    X : pandas.DataFrame
         DataFrame of features and their values in validation set.
     round_results : int, optional
         How many decimal places to round results to. The default is 3.
@@ -567,14 +813,14 @@ def calulate_vif(data, numerical_cols):
 
     Parameters
     ----------
-    data : Pandas DataFrame
+    data : pandas.DataFrame
         DataFrame containing all data.
     numerical_cols : list
         List of strings representing the column names of the numerical data in 'data'.
 
     Returns
     -------
-    vif : Pandas DataFrame
+    vif : pandas.DataFrame
         Indeces: numerical variable names
         First column: VIF for given variable
 
@@ -598,7 +844,7 @@ def fit_to_dist_gof(my_data, dists_to_fit, ad_dists):
     
     Parameters
     ----------
-    my_data: pandas DataFrame
+    my_data: pandas.DataFrame
         1D itertable of numerical values to be fit to the distributions 
     dists_to_fit: list of strings 
         Each string must represent the name of a scipy.stats.rv_continuous distribution object
@@ -607,7 +853,7 @@ def fit_to_dist_gof(my_data, dists_to_fit, ad_dists):
     
     Returns
     -------
-    complete_results_df: pandas DataFrame
+    complete_results_df: pandas.DataFrame
         Contains fit parameters and GOF test results (specified in the function)
     """
     
@@ -671,9 +917,9 @@ def calc_sse_dist(my_data, fit_results_df, bins=200):
 
     Parameters
     ----------
-    my_data : pandas DataFrame
+    my_data : pandas.DataFrame
         1D itertable of numerical values to be fit to the distributions 
-    fit_results_df : pandas DataFrame
+    fit_results_df : pandas.DataFrame
         Created with fit_to_dist_gof() function above
     bins : integer, optional
         Number of bins for histogram which will generate x-values for pdf calculations of comparison distributions
@@ -724,7 +970,7 @@ def rank_gof_stats(complete_results_df, gof_stat_col_names, gof_names):
 
     Parameters
     ----------
-    complete_results_df : Pandas DataFrame
+    complete_results_df : pandas.DataFrame
         Generated from fit_to_dist_gof().
     gof_stat_col_names : 1-D list
         The names of the columns that contain the values of the test statistic for each GOF test.
@@ -735,7 +981,7 @@ def rank_gof_stats(complete_results_df, gof_stat_col_names, gof_names):
 
     Returns
     -------
-    top_10_df : Pandas DataFrame
+    top_10_df : pandas.DataFrame
         Columns are GOF test names, each column represents the top 10 ranked distributions, in order,
         of said GOF test.
 
@@ -769,13 +1015,13 @@ def top_10_counts(top_10_df):
 
     Parameters
     ----------
-    top_10_df : Pandas DataFrame
+    top_10_df : pandas.DataFrame
         Generated in rank_gof_stats(). Columns are GOF test names, each column represents the 
         top 10 ranked distributions, in order, of said GOF test.
 
     Returns
     -------
-    top_10_counts_df : Pandas DataFrame
+    top_10_counts_df : pandas.DataFrame
         Number of times each dist appears in top_10_df, and for which GOF metrics specifically.
 
     """
@@ -815,68 +1061,6 @@ def top_10_counts(top_10_df):
     top_10_counts_df.sort_values(by='Top 10 Count', inplace=True, ascending=False)
     
     return top_10_counts_df
-
-# # Combine Q-Q plot and histogram/distribution comparisons plot
-# def compare_dist_plots(dist_str, loc, scale, shape_params, comp_data, comp_data_str, rank_str, bins=200, save_img=False, img_filename=None, save_dir=None):
-#     """    
-#     This assumes scipy fit() has already been done on the distribution and dist paramaters have been generated
-    
-#     Input: dist_str - string representation of scipy distribution which my data will be compared to
-#            loc - loc parameter of dist_str returned from fit() function
-#            scale - scale parameter of dist_str returned from fit() function
-#            shape_params - other shape parameters (if present) of dist_str returned from fit() function
-#            comp_data - the data that I will be comparing to scipy distributions
-#            comp_data_str - string name of comp_data for plot labeling
-    
-#     Returns: No return values
-#     """
-    
-#     # Create scipy distribution object based on its name
-#     dist_object = getattr(stats, dist_str)
-    
-#     # Specify scipy distribution shape, location, and scale based on the parameters calculated from fit()
-#     rv = dist_object(*shape_params, loc, scale)
-    
-#     # Use the distribution to create x values for the plot
-#     # ppf() is the inverse of cdf(). So if cdf(10) = 0.1, then ppf(0.1)=10
-#     # ppf(0.1) is the x-value at which 10% of the values are less than or equal to it
-#     x = np.linspace(rv.ppf(0.01), rv.ppf(0.99), 100)
-    
-#     # Create 1x2 figure
-#     fig, gs, ax_array_flat = initialize_fig_gs_ax(num_rows=1, num_cols=2, figsize=(11, 5))
-#     ax1 = ax_array_flat[0]
-#     ax2 = ax_array_flat[1]
-    
-#     # Create Q-Q plot, fit=False because it uses the parameters we already calculated (loc, scale, distargs)
-#     qqplot(comp_data, line='45', fit=False, dist=dist_object, loc=loc, scale=scale, distargs=shape_params, ax=ax1)
-#     ax1.set_xlabel(f'Theoretical Quantiles ({dist_str})')
-#     ax1.set_ylabel('Sample Quantiles')
-#     ax1.set_title(f'{comp_data_str} Q-Q Plot', y=1.05)
-    
-#     # Plot distribution on top of histogram of charges in order to compare
-#     ax2.hist(comp_data, bins=bins, density=True, histtype='stepfilled', alpha=0.9, label=comp_data_str)
-#     ax2.plot(x, rv.pdf(x), 'r-', lw=2.5, alpha=1, label=dist_str)
-#     ax2.set_title(f'{comp_data_str} histogram', y=1.05)
-#     ax2.set_xlabel(f'{comp_data_str}')
-#     ax2.legend()
-    
-#     # Include shape parameters
-#     param_names = (dist_object.shapes + ', loc, scale').split(', ') if dist_object.shapes else ['loc', 'scale']
-#     all_params = shape_params + (loc,) + (scale,) # Need to convert loc and scale to tuples
-#     param_list = ['{}: {:0.2f}'.format(k,v) for k,v in zip(param_names, all_params)]
-#     all_params_str = '\n'.join(str(line) for line in param_list)
-#     textbox_text = 'Shape Params:\n' + all_params_str + '\n\nGOF Ranks: \n' + rank_str
-#     box_style = {'facecolor':'white', 'boxstyle':'round', 'alpha':0.8}
-#     ax2.text(1.05, 0.99, textbox_text, bbox=box_style, transform=ax2.transAxes, verticalalignment='top', horizontalalignment='left')  
-    
-#     # Figure formatting
-#     fig.suptitle(f"{comp_data_str} vs. {dist_str} distribution", fontsize=22)
-#     fig.tight_layout(h_pad=2) # Increase spacing between plots to minimize text overlap
-    
-#     if (save_img):
-#         save_image(img_filename, save_dir)
-#         print(f"saving file '{img_filename}' in '{save_dir}'")
-#     plt.show()
 
 
 def create_fit_param_str(dist_obj, fit_params):
