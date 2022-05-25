@@ -234,9 +234,14 @@ def create_formatted_cols_dict(column_names, custom_dict=None):
         for k in custom_dict.keys():
             formatted_cols[k] = custom_dict[k]
 
-def add_edit_formatted_col(col_name, formatted_name):
+# def add_edit_formatted_col(col_name, formatted_name):
+#     global formatted_cols
+#     formatted_cols[col_name] = formatted_name
+    
+def update_formatted_cols(col_name, formatted_name):
     global formatted_cols
     formatted_cols[col_name] = formatted_name
+
 
 def format_col(col_name):
     """
